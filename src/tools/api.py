@@ -35,9 +35,12 @@ def get_prices(ticker: str, start_date: str, end_date: str) -> list[Price]:
         headers["X-API-KEY"] = api_key
 
     url = f"https://api.financialdatasets.ai/prices/?ticker={ticker}&interval=day&interval_multiplier=1&start_date={start_date}&end_date={end_date}"
-    response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching price data for {ticker}: {str(e)}")
+        return []
 
     # Parse response with Pydantic model
     price_response = PriceResponse(**response.json())

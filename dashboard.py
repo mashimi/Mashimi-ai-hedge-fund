@@ -71,7 +71,8 @@ st.markdown("""
 
 # Sidebar for inputs
 with st.sidebar:
-    st.image("https://raw.githubusercontent.com/virattt/ai-hedge-fund/main/assets/logo.png", width=100)
+    # Temporarily revert to the remote logo until the local image issue is fixed
+    st.image("https://raw.githubusercontent.com/mashimi/ai-hedge-fund/main/assets/logo.png", width=100)
     st.title("AI Hedge Fund")
     
     ticker_input = st.text_input("Enter Stock Ticker(s)", "AAPL", help="Enter one or more comma-separated tickers (e.g., AAPL,MSFT,NVDA)")
@@ -114,6 +115,12 @@ with st.sidebar:
     sentiment = st.checkbox("Sentiment", value=True)
     valuation = st.checkbox("Valuation", value=True)
     
+    st.write("Trading Strategies")
+    momentum_strategy = st.checkbox("Momentum Strategy", value=True, 
+                                   help="Technical analysis strategy with entry/exit points and stop-loss levels")
+    value_strategy = st.checkbox("Value Strategy", value=True,
+                               help="Fundamental analysis strategy with portfolio allocation recommendations")
+    
     # Add selected analysts to the list
     if buffett:
         selected_analysts.append("warren_buffett")
@@ -133,6 +140,10 @@ with st.sidebar:
         selected_analysts.append("sentiment_analyst")
     if valuation:
         selected_analysts.append("valuation_analyst")
+    if momentum_strategy:
+        selected_analysts.append("momentum_strategy")
+    if value_strategy:
+        selected_analysts.append("value_strategy")
     
     # LLM Selection
     st.subheader("Select LLM Model")
@@ -151,14 +162,14 @@ with st.sidebar:
     # StockPredictor options
     st.subheader("Advanced Analysis")
     use_stock_predictor = st.checkbox("Use StockPredictor (Mashimi Reasoning)", value=False, 
-                                     help="Enable detailed stock analysis using Mashimi Reasoning")
+                                     help="Enable detailed stock analysis using Perplexity sonar-Reasoning")
     
     if use_stock_predictor:
         predictor_model_type = st.selectbox(
             "Predictor Model",
             options=list(PerplexityConfig.MODELS.keys()),
             index=0,
-            help="Select the Mashimi model to use for StockPredictor analysis"
+            help="Select the Perplexity sonar-reasoning model to use for StockPredictor analysis"
         )
         
         predictor_temperature = st.slider(
@@ -175,7 +186,7 @@ with st.sidebar:
     
     # Disclaimer
     st.markdown("---")
-    st.caption("**Disclaimer**: This tool is for educational purposes only. Not financial advice.")
+    st.caption("**Disclaimer**: Trading is not for every one be responsible for your lost.")
 
 
 # Helper functions
@@ -301,29 +312,97 @@ def create_analyst_signals_table(ticker: str, analyst_signals: Dict[str, Any]) -
     """Create a table of analyst signals for a ticker."""
     data = []
     
+    # Create separate lists for traditional analysts and strategies
+    traditional_analysts = []
+    strategy_signals = []
+    
     for agent, signals in analyst_signals.items():
         if ticker in signals:
             signal_data = signals[ticker]
             agent_name = agent.replace("_agent", "").replace("_", " ").title()
             
-            data.append({
+            entry = {
                 "Analyst": agent_name,
                 "Signal": signal_data.get("signal", "").upper(),
                 "Confidence": f"{signal_data.get('confidence', 0):.1f}%",
                 "Details": signal_data.get("reasoning", "")
-            })
+            }
+            
+            # Add to appropriate list based on agent type
+            if agent in ["momentum_strategy_agent", "value_strategy_agent"]:
+                strategy_signals.append(entry)
+            else:
+                traditional_analysts.append(entry)
     
-    if data:
-        df = pd.DataFrame(data)
-        st.dataframe(df, use_container_width=True)
+    # Display traditional analysts
+    if traditional_analysts:
+        st.subheader("Analyst Signals")
+        df_analysts = pd.DataFrame(traditional_analysts)
+        st.dataframe(df_analysts, use_container_width=True)
+    
+    # Display strategy signals with additional information
+    if strategy_signals:
+        st.subheader("Strategy Signals")
+        
+        for strategy in strategy_signals:
+            # Determine signal color
+            signal = strategy["Signal"]
+            if signal == "BULLISH":
+                signal_color = "green"
+            elif signal == "BEARISH":
+                signal_color = "red"
+            else:
+                signal_color = "yellow"
+            
+            # Extract additional strategy-specific data
+            agent_name = strategy["Analyst"]
+            confidence = strategy["Confidence"]
+            reasoning = strategy["Details"]
+            
+            # Get additional data based on strategy type
+            additional_info = {}
+            agent_key = agent_name.lower().replace(" ", "_") + "_agent"
+            if ticker in analyst_signals.get(agent_key, {}):
+                signal_data = analyst_signals[agent_key][ticker]
+                
+                if "momentum" in agent_name.lower():
+                    additional_info = {
+                        "Entry Price": f"${signal_data.get('entry_price', 0):.2f}",
+                        "Exit Price": f"${signal_data.get('exit_price', 0):.2f}",
+                        "Stop Loss": f"${signal_data.get('stop_loss', 0):.2f}"
+                    }
+                elif "value" in agent_name.lower():
+                    additional_info = {
+                        "Target Allocation": f"{signal_data.get('target_allocation', 0):.1f}%",
+                        "Entry Price": f"${signal_data.get('entry_price', 0):.2f}",
+                        "Exit Price": f"${signal_data.get('exit_price', 0):.2f}"
+                    }
+            
+            # Create a card for the strategy
+            st.markdown(f"""
+            <div class="card" style="border-left: 5px solid {signal_color};">
+                <h4>{agent_name}</h4>
+                <p>Signal: <span style="color: {signal_color}; font-weight: bold;">{signal}</span> (Confidence: {confidence})</p>
+                <p><strong>Details:</strong> {reasoning}</p>
+                <p><strong>Trading Parameters:</strong></p>
+                <ul>
+                    {"".join([f"<li><strong>{k}:</strong> {v}</li>" for k, v in additional_info.items()])}
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
 
 
 def run_stock_predictor_analysis(ticker: str, model_type: str, temperature: float) -> Dict[str, Any]:
     """Run the StockPredictor analysis for a ticker."""
     try:
-        # Initialize the StockPredictor
+        # Initialize the StockPredictor with increased timeout and retries
         st.info("Initializing StockPredictor...")
-        predictor = StockPredictor(model_type=model_type, temperature=temperature)
+        predictor = StockPredictor(
+            model_type=model_type, 
+            temperature=temperature,
+            timeout=120.0,  # 2 minutes timeout
+            max_retries=5    # 5 retries
+        )
         
         # Get financial data
         end_date_str = datetime.now().strftime("%Y-%m-%d")
@@ -404,9 +483,29 @@ def display_stock_predictor_analysis(ticker: str, analysis: Dict[str, Any]) -> N
         st.warning(f"Analysis is incomplete. Missing: {', '.join(missing_keys)}")
         return
     
-    # Debug: Show raw recommendation
-    st.write("Raw recommendation:")
-    st.code(analysis["recommendation"])
+    # Check if the recommendation contains an error message
+    try:
+        recommendation_data = json.loads(analysis["recommendation"])
+        if "error" in recommendation_data:
+            # Clean up HTML tags from error message
+            import re
+            error_msg = recommendation_data.get('message', 'Unknown error')
+            clean_error = re.sub(r'<[^>]*>', '', error_msg)  # Remove HTML tags
+            clean_error = re.sub(r'\s+', ' ', clean_error).strip()  # Remove extra whitespace
+            
+            st.error(f"Perplexity API Error: {clean_error}")
+            st.info("""The analysis will continue with fallback data. You can:
+1. Try again later when the API is available
+2. Disable StockPredictor in the sidebar
+3. Continue with other analysts' recommendations""")
+        else:
+            # Only show raw recommendation for debugging if there's no error
+            st.write("Raw recommendation:")
+            st.code(analysis["recommendation"])
+    except (json.JSONDecodeError, KeyError):
+        # If we can't parse the recommendation, just show it as is
+        st.write("Raw recommendation:")
+        st.code(analysis["recommendation"])
     
     try:
         # Parse the analysis results

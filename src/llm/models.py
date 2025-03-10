@@ -6,6 +6,7 @@ from enum import Enum
 from pydantic import BaseModel
 from typing import Tuple
 from llm.perplexity_langchain import ChatPerplexity
+from llm.deepseek_langchain import ChatDeepSeek
 
 
 class ModelProvider(str, Enum):
@@ -14,6 +15,7 @@ class ModelProvider(str, Enum):
     GROQ = "Groq"
     ANTHROPIC = "Anthropic"
     PERPLEXITY = "Perplexity"  # Added Perplexity as a provider
+    DEEPSEEK = "DeepSeek"  # Added DeepSeek as a provider
 
 
 class LLMModel(BaseModel):
@@ -35,7 +37,7 @@ class LLMModel(BaseModel):
         return self.provider == ModelProvider.PERPLEXITY
 
 
-# Define available models including new Perplexity Sonar models
+# Define available models including new Perplexity Sonar models and DeepSeek models
 AVAILABLE_MODELS = [
     LLMModel(
         display_name="[anthropic] claude-3.5-haiku",
@@ -82,6 +84,17 @@ AVAILABLE_MODELS = [
         model_name="o3-mini",
         provider=ModelProvider.OPENAI
     ),
+    # DeepSeek models
+    LLMModel(
+        display_name="[deepseek] deepseek-chat",
+        model_name="deepseek-chat",
+        provider=ModelProvider.DEEPSEEK
+    ),
+    LLMModel(
+        display_name="[deepseek] deepseek-coder",
+        model_name="deepseek-coder",
+        provider=ModelProvider.DEEPSEEK
+    ),
     # New Perplexity Sonar models
     LLMModel(
         display_name="[perplexity] sonar-small-online",
@@ -112,7 +125,7 @@ def get_model_info(model_name: str) -> LLMModel | None:
     """Get model information by model_name"""
     return next((model for model in AVAILABLE_MODELS if model.model_name == model_name), None)
 
-def get_model(model_name: str, model_provider: ModelProvider) -> ChatOpenAI | ChatGroq | ChatAnthropic | ChatPerplexity | None:
+def get_model(model_name: str, model_provider: ModelProvider) -> ChatOpenAI | ChatGroq | ChatAnthropic | ChatPerplexity | ChatDeepSeek | None:
     """Get the appropriate LLM model based on provider and model name"""
     if model_provider == ModelProvider.GROQ:
         api_key = os.getenv("GROQ_API_KEY")
@@ -141,5 +154,12 @@ def get_model(model_name: str, model_provider: ModelProvider) -> ChatOpenAI | Ch
             print(f"API Key Error: Please make sure PERPLEXITY_API_KEY is set in your .env file.")
             raise ValueError("Perplexity API key not found. Please make sure PERPLEXITY_API_KEY is set in your .env file.")
         return ChatPerplexity(model=model_name, api_key=api_key)
+    
+    elif model_provider == ModelProvider.DEEPSEEK:
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+        if not api_key:
+            print(f"API Key Error: Please make sure DEEPSEEK_API_KEY is set in your .env file.")
+            raise ValueError("DeepSeek API key not found. Please make sure DEEPSEEK_API_KEY is set in your .env file.")
+        return ChatDeepSeek(model=model_name, api_key=api_key)
     
     return None

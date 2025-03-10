@@ -41,7 +41,7 @@ class StockPredictor:
     Sonar Reasoning model, which is optimized for complex reasoning tasks.
     """
     
-    def __init__(self, model_type='reasoning', temperature=0.5, max_tokens=None):
+    def __init__(self, model_type='reasoning', temperature=0.5, max_tokens=None, timeout=120.0, max_retries=5):
         """
         Initialize the StockPredictor.
         
@@ -49,6 +49,8 @@ class StockPredictor:
             model_type: Type of Perplexity model to use ('reasoning', 'medium', 'small', 'large')
             temperature: Temperature for sampling (0.0 to 1.0)
             max_tokens: Maximum number of tokens to generate (default: None)
+            timeout: Timeout for API requests in seconds (default: 120.0)
+            max_retries: Maximum number of retries for failed requests (default: 5)
         """
         if model_type not in PerplexityConfig.MODELS:
             raise ValueError(f"Invalid model type. Choose from: {list(PerplexityConfig.MODELS.keys())}")
@@ -71,7 +73,9 @@ class StockPredictor:
             model=model_config['name'],
             temperature=temperature,
             max_tokens=max_tokens or model_config['max_tokens'],
-            pplx_api_key=api_key
+            pplx_api_key=api_key,
+            timeout=timeout,
+            max_retries=max_retries
         )
         
         # Build the analysis chains

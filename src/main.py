@@ -15,6 +15,8 @@ from agents.sentiment import sentiment_agent
 from agents.warren_buffett import warren_buffett_agent
 from graph.state import AgentState
 from agents.valuation import valuation_agent
+from strategies.momentum_strategy import momentum_strategy_agent
+from strategies.value_strategy import value_strategy_agent
 from utils.display import print_trading_output
 from utils.analysts import ANALYST_ORDER, get_analyst_nodes
 from utils.progress import progress
@@ -71,27 +73,37 @@ def run_hedge_fund(
         else:
             agent = app
 
-        final_state = agent.invoke(
-            {
-                "messages": [
-                    HumanMessage(
-                        content="Make trading decisions based on the provided data.",
-                    )
-                ],
-                "data": {
-                    "tickers": tickers,
-                    "portfolio": portfolio,
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "analyst_signals": {},
-                },
-                "metadata": {
-                    "show_reasoning": show_reasoning,
-                    "model_name": model_name,
-                    "model_provider": model_provider,
-                },
+        # Initialize state with empty data
+        initial_state = {
+            "messages": [
+                HumanMessage(
+                    content="Make trading decisions based on the provided data.",
+                )
+            ],
+            "data": {
+                "tickers": tickers,
+                "portfolio": portfolio,
+                "start_date": start_date,
+                "end_date": end_date,
+                "analyst_signals": {},
+                "strategies": {},
             },
-        )
+            "metadata": {
+                "show_reasoning": show_reasoning,
+                "model_name": model_name,
+                "model_provider": model_provider,
+            },
+        }
+        
+        # Register trading strategies
+        from utils.strategy_integration import register_strategies, integrate_strategy_signals
+        initial_state = register_strategies(initial_state)
+        
+        # Invoke the agent workflow
+        final_state = agent.invoke(initial_state)
+        
+        # Integrate strategy signals
+        final_state = integrate_strategy_signals(final_state)
 
         return {
             "decisions": parse_hedge_fund_response(final_state["messages"][-1].content),
@@ -118,9 +130,26 @@ def create_workflow(selected_analysts=None):
     # Default to all analysts if none selected
     if selected_analysts is None:
         selected_analysts = list(analyst_nodes.keys())
-    # Add selected analyst nodes
+    
+    # Separate traditional analysts from strategy agents
+    traditional_analysts = []
+    strategy_agents = []
+    
     for analyst_key in selected_analysts:
+        if analyst_key in ["momentum_strategy", "value_strategy"]:
+            strategy_agents.append(analyst_key)
+        else:
+            traditional_analysts.append(analyst_key)
+    
+    # Add traditional analyst nodes
+    for analyst_key in traditional_analysts:
         node_name, node_func = analyst_nodes[analyst_key]
+        workflow.add_node(node_name, node_func)
+        workflow.add_edge("start_node", node_name)
+    
+    # Add strategy nodes
+    for strategy_key in strategy_agents:
+        node_name, node_func = analyst_nodes[strategy_key]
         workflow.add_node(node_name, node_func)
         workflow.add_edge("start_node", node_name)
 
@@ -128,9 +157,14 @@ def create_workflow(selected_analysts=None):
     workflow.add_node("risk_management_agent", risk_management_agent)
     workflow.add_node("portfolio_management_agent", portfolio_management_agent)
 
-    # Connect selected analysts to risk management
-    for analyst_key in selected_analysts:
+    # Connect traditional analysts to risk management
+    for analyst_key in traditional_analysts:
         node_name = analyst_nodes[analyst_key][0]
+        workflow.add_edge(node_name, "risk_management_agent")
+    
+    # Connect strategy agents to risk management
+    for strategy_key in strategy_agents:
+        node_name = analyst_nodes[strategy_key][0]
         workflow.add_edge(node_name, "risk_management_agent")
 
     workflow.add_edge("risk_management_agent", "portfolio_management_agent")
